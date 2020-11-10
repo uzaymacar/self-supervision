@@ -17,7 +17,7 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 
-def accuracy(y_pred, y_true):
+def classification_accuracy(y_pred, y_true):
     """Function to calculate multiclass accuracy per batch"""
     y_pred_max = torch.argmax(y_pred, dim=-1)
     correct_pred = (y_pred_max == y_true).float()
@@ -32,17 +32,14 @@ def freeze_weights(model, model_class='alexnet'):
     """
     if model_class == 'alexnet':
         # For AlexNet, below procedure freezes weights up to `conv3`
-        for child_no, child in enumerate(model.children()):
-            for layer_no, layer in enumerate(child):
-                for param in layer.parameters():
-                    param.requires_grad = False
-                if layer_no == 6:
-                    break
-            if child_no == 0:
-                break
-
-    for param in model.parameters():
-        param.requires_grad = False
+        for child in model.children():
+            for component in child:
+                for subcomponent in component.children():
+                    for layer_no, layer in enumerate(subcomponent):
+                        for param in layer.parameters():
+                            param.requires_grad = False
+                        if layer_no == 6:
+                            return
 
 
 def setup(rank, world_size):
