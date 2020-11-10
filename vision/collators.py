@@ -44,7 +44,7 @@ class RotationCollator(DataCollator):
             theta = np.random.choice(self.rotation_degrees, size=1)[0]
             x[i] = self.rotate_image(x[i].unsqueeze(0), theta=theta).squeeze(0)
             # TODO: Turns out we can tensorize/vectorize the above!
-            y[i] = torch.tensor(self.rotation_degrees.index(theta)).to(y.dtype)
+            y[i] = torch.tensor(self.rotation_degrees.index(theta)).long()  # to(y.dtype)
 
         return x, y
 
