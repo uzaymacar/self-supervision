@@ -25,11 +25,11 @@ class DataCollator(object):
 
 class RotationCollator(DataCollator):
     """
-    Data collator used for cutout.
+    Data collator used for rotation classification task.
     """
-    def __init__(self, num_rotation_classes=4):
+    def __init__(self, num_rotations=4):
         super(RotationCollator).__init__()
-        self.rotation_degrees = np.linspace(0, 360, num_rotation_classes+1).tolist()[:-1]
+        self.rotation_degrees = np.linspace(0, 360, num_rotations + 1).tolist()[:-1]
         # We are excluding the last item, 360 degrees, since it is equivalent to 0 degrees
 
     def __call__(self, examples):
@@ -66,3 +66,41 @@ class RotationCollator(DataCollator):
         grid = F.affine_grid(rotation_matrix, x.shape, align_corners=True).type(dtype)
         x = F.grid_sample(x, grid, align_corners=True)
         return x
+
+
+class CountingCollator(DataCollator):
+    """
+    Data collator used for counting task.
+    """
+    def __init__(self, num_tiles=4):
+        super(CountingCollator).__init__()
+        # Make sure num. tiles is a number whose square root is an integer (i.e. perfect square)
+        assert num_tiles % np.sqrt(num_tiles) == 0
+        self.num_tiles = num_tiles
+
+    def __call__(self, examples):
+        """
+        Makes the class callable, just like a function.
+        """
+        batch = self._preprocess_batch(examples)
+        originals, _ = batch
+        # Create the other full-size random images to be contrasted to the originals
+        others = torch.cat([originals[1:], originals[0:1]], dim=0)
+
+        # Compute the tile length and extract the tiles
+        image_width = originals[0].shape[-1]
+        num_tiles_per_dimension = int(np.sqrt(self.num_tiles))
+        tile_length = image_width // num_tiles_per_dimension
+        tiles = []
+        for i in range(num_tiles_per_dimension):
+            for j in range(num_tiles_per_dimension):
+                tile_ij = originals[:, :, i*tile_length: (i+1)*tile_length, j*tile_length: (j+1)*tile_length]
+                tiles.append(tile_ij)
+        # Tensorize the tiles
+        tiles = torch.stack(tiles)
+
+        # The tiles are tile_length x tile_length, let's resize the other image batches as well
+        originals = F.interpolate(originals, size=(tile_length, tile_length), mode='bilinear', align_corners=True)
+        others = F.interpolate(others, size=(tile_length, tile_length), mode='bilinear', align_corners=True)
+
+        return originals, tiles, others
