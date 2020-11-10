@@ -1,1 +1,1 @@
-from text.collators import MaskedLanguageModelingDataCollator
+from language.collators import MaskedLanguageModelingDataCollator
