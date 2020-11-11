@@ -30,6 +30,7 @@ def freeze_weights(model, model_class='alexnet'):
     Freezes all of the weights of the PyTorch model. You have change the last few layers
     AFTER calling this function on your model, otherwise everything will be frozen.
     """
+    # TODO: Change this because now you have batch normalizations!
     if model_class == 'alexnet':
         # For AlexNet, below procedure freezes weights up to `conv3`
         for child in model.children():

@@ -1,6 +1,7 @@
 from copy import deepcopy
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from torchvision.models.utils import load_state_dict_from_url
 
@@ -10,23 +11,35 @@ MODEL_URLS = {
 }
 
 
+# TODO: Added BatchNorm Here FYI! Can we do transfer learning on these?
 class AlexNetBase(nn.Module):
-    def __init__(self):
+    def __init__(self, batch_normalization=True):
         super(AlexNetBase, self).__init__()
         self.features = nn.Sequential(nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
+                                      # nn.BatchNorm2d(64),
                                       nn.ReLU(inplace=True),
                                       nn.MaxPool2d(kernel_size=3, stride=2),
                                       nn.Conv2d(64, 192, kernel_size=5, padding=2),
+                                      # nn.BatchNorm2d(192),
                                       nn.ReLU(inplace=True),
                                       nn.MaxPool2d(kernel_size=3, stride=2),
                                       nn.Conv2d(192, 384, kernel_size=3, padding=1),
+                                      # nn.BatchNorm2d(384),
                                       nn.ReLU(inplace=True),
                                       nn.Conv2d(384, 256, kernel_size=3, padding=1),
+                                      # nn.BatchNorm2d(256),
                                       nn.ReLU(inplace=True),
                                       nn.Conv2d(256, 256, kernel_size=3, padding=1),
+                                      # nn.BatchNorm2d(256),
                                       nn.ReLU(inplace=True),
                                       nn.MaxPool2d(kernel_size=3, stride=2))
         self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
+        self.initialize_weights()  # TODO: No need to initialize when using batch norm?
+
+    def initialize_weights(self):
+        for layer_no in range(len(self.features)):
+            if hasattr(self.features[layer_no], 'weight'):
+                torch.nn.init.kaiming_normal_(self.features[layer_no].weight)
 
     def forward(self, x):
         x = self.features(x)
@@ -40,11 +53,19 @@ class ClassificationHead(nn.Module):
         super(ClassificationHead, self).__init__()
         self.classifier = nn.Sequential(nn.Dropout(),
                                         nn.Linear(256 * 6 * 6, 4096),
+                                        # nn.BatchNorm1d(4096),
                                         nn.ReLU(inplace=True),
                                         nn.Dropout(),
                                         nn.Linear(4096, 4096),
+                                        # nn.BatchNorm1d(4096),
                                         nn.ReLU(inplace=True),
                                         nn.Linear(4096, num_classes))
+        self.initialize_weights()  # TODO: No need to initialize when using batch norm?
+
+    def initialize_weights(self):
+        for layer_no in range(len(self.classifier)):
+            if hasattr(self.classifier[layer_no], 'weight'):
+                torch.nn.init.kaiming_normal_(self.classifier[layer_no].weight)
 
     def forward(self, x):
         x = self.classifier(x)
@@ -52,15 +73,23 @@ class ClassificationHead(nn.Module):
 
 
 class RegressionHead(nn.Module):
-    def __init__(self):
+    def __init__(self, output_size=1000):
         super(RegressionHead, self).__init__()
         self.regressor = nn.Sequential(nn.Dropout(),
                                        nn.Linear(256 * 6 * 6, 4096),
+                                       # nn.BatchNorm1d(4096),
                                        nn.ReLU(inplace=True),
                                        nn.Dropout(),
                                        nn.Linear(4096, 4096),
+                                       # nn.BatchNorm1d(4096),
                                        nn.ReLU(inplace=True),
-                                       nn.Linear(4096, 1))
+                                       nn.Linear(4096, output_size))
+        self.initialize_weights()  # TODO: No need to initialize when using batch norm?
+
+    def initialize_weights(self):
+        for layer_no in range(len(self.regressor)):
+            if hasattr(self.regressor[layer_no], 'weight'):
+                torch.nn.init.kaiming_normal_(self.regressor[layer_no].weight)
 
     def forward(self, x):
         x = self.regressor(x)
@@ -73,29 +102,42 @@ class AlexNetClassic(nn.Module):
         self.model = nn.ModuleList([AlexNetBase(), ClassificationHead(num_classes=1000)])
 
     def forward(self, x):
-        x = self.model(x)
+        x = self.model[0](x)
+        x = self.model[1](x)
         return x
 
 
 class AlexNetRotation(nn.Module):
     def __init__(self, num_rotations=4):
         super(AlexNetRotation, self).__init__()
-        self.model = nn.ModuleList([AlexNetBase(), ClassificationHead(num_classes=num_rotations)])
+        # self.model = nn.ModuleList([AlexNetBase(), ClassificationHead(num_classes=num_rotations)])
+        self.model = AlexNetClassic()
+        self.classifier = nn.Linear(1000, num_rotations)
 
     def forward(self, x):
-        x = self.model[0](x)  # base
-        x = self.model[1](x)  # head
+        # x = self.model[0](x)  # base
+        # x = self.model[1](x)  # head
+        x = self.model(x)
+        x = F.relu(x)
+        x = self.classifier(x)
         return x
 
 
 class AlexNetCounting(nn.Module):
-    def __init__(self):
+    def __init__(self, num_elements=1000):
+        """
+        AlexNet Base Model + Regression Head; as implemented in "Representation Learning by
+        Learning to Count" Noroozi et al.
+        :param (int) num_elements: Number of elements that we want to count
+        """
         super(AlexNetCounting, self).__init__()
-        self.model = nn.ModuleList([AlexNetBase(), RegressionHead()])
+        self.model = nn.ModuleList([AlexNetBase(), RegressionHead(output_size=num_elements)])
 
     def forward(self, x):
         x = self.model[0](x)  # base
         x = self.model[1](x)  # head
+        # NOTE: ReLU is applied at the end because we want the counting vector to be all positive
+        x = F.relu(x)
         return x
 
 
