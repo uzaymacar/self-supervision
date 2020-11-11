@@ -9,9 +9,10 @@ def rotation_loss(y_hat, y):
 
 # TODO: Look at the reduction techniques in F.mse_loss()
 def counting_loss(originals_y_hat, tiles_y_hat, others_y_hat, M=10, reduction='mean'):
-    """Contrastive loss limits teh effects of the least effort bias"""
-    originals_difference = torch.abs(originals_y_hat - torch.sum(tiles_y_hat, axis=0)) ** 2
-    contrastive_difference = F.relu(M - torch.abs(others_y_hat - torch.sum(tiles_y_hat)) ** 2)
+    """Contrastive loss limits the effects of the least effort bias"""
+    tiles_summation = torch.sum(tiles_y_hat, axis=0)
+    originals_difference = torch.abs(originals_y_hat - tiles_summation) ** 2
+    contrastive_difference = F.relu(M - (torch.abs(others_y_hat - tiles_summation) ** 2))
     # NOTE: The ReLU here implements a differentiable version of the max{0, M - |...|}
     #       mentioned in the paper in equation (4)
 
