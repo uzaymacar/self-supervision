@@ -100,7 +100,14 @@ class CountingCollator(DataCollator):
         tiles = torch.stack(tiles)
 
         # The tiles are tile_length x tile_length, let's resize the other image batches as well
-        originals = F.interpolate(originals, size=(tile_length, tile_length), mode='bilinear', align_corners=True)
-        others = F.interpolate(others, size=(tile_length, tile_length), mode='bilinear', align_corners=True)
+        # NOTE: Randomly pick downsampling mode in order to prevent the model from cheating
+        mode = np.random.choice(['nearest', 'bilinear', 'bicubic', 'area'], size=1)
+        if mode == 'bilinear' or mode == 'bicubic':
+            # NOTE: `align_corners` only allowed with bilinear or bicubic methods
+            originals = F.interpolate(originals, size=(tile_length, tile_length), mode=mode, align_corners=True)
+            others = F.interpolate(others, size=(tile_length, tile_length), mode=mode, align_corners=True)
+        else:
+            originals = F.interpolate(originals, size=(tile_length, tile_length), mode=mode)
+            others = F.interpolate(others, size=(tile_length, tile_length), mode=mode)
 
         return originals, tiles, others
