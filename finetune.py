@@ -12,7 +12,7 @@ from torchvision.datasets import SVHN
 from torchvision.models import AlexNet
 from torchvision.transforms import transforms
 
-from utils.helpers import set_seed, freeze_weights, accuracy
+from utils.helpers import set_seed, freeze_weights, classification_accuracy
 
 # Set random seed for reproducibility
 SEED = 42

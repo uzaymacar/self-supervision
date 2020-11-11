@@ -6,6 +6,7 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import Adam
+from torch.optim.lr_scheduler import StepLR
 
 from torchvision.datasets import CIFAR10, ImageNet
 from vision.datasets import TinyImageNet, Cityscapes
@@ -18,6 +19,7 @@ from utils.helpers import set_seed, classification_accuracy
 
 
 parser = argparse.ArgumentParser(description='Script for pretraining on self-supervised tasks.')
+parser.add_argument('--img_size', default=None, type=int, help='Pass the img_size for resizing')
 parser.add_argument('--batch_size', default=512, type=int, help='Mini-batch size for training')
 parser.add_argument('--learning_rate', default=3e-4, type=float, help='Learning rate for training')
 parser.add_argument('--weight_decay', default=0.0, type=float, help='Weight decay term for L2-regularization')
@@ -28,7 +30,7 @@ parser.add_argument('--dataset_root', default=None, type=str, help='Path to the 
 parser.add_argument('--task', default='rotation', choices=['rotation', 'counting'], help='Self-supervised task')
 parser.add_argument('--seed', default=42, type=int, help='Set seeds for reproducibility')
 parser.add_argument('--in_memory_dataset', default=False, action='store_true', help='Indicate to load dataset to memory (if applicable)')
-parser.add_argument('--num_workers', default=8, type=int, help='Number of workers for the data loaders')
+parser.add_argument('--num_workers', default=0, type=int, help='Number of workers for the data loaders')
 parser.add_argument('--gpu_id', default=7, type=int, help='This is the GPU to use in server [for UZAY]')
 args = parser.parse_args()
 
@@ -47,15 +49,26 @@ MODEL_ID = '%s-%s-%s' % (args.model, args.dataset, args.task)
 print('MODEL_ID: %s' % MODEL_ID)
 
 # Define image transforms for each dataset
-final_transforms = [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
+final_transforms = [transforms.ToTensor(), transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))]
 if args.dataset == 'cifar10':
-    transform = transforms.Compose([transforms.Resize((64, 64))] + final_transforms)
+    img_size = 64 if not args.img_size else args.img_size
+    transform = transforms.Compose([transforms.Resize((img_size, img_size))] + final_transforms)
 elif args.dataset == 'imagenet':
-    transform = transforms.Compose([transforms.Resize((256, 256))] + final_transforms)
+    img_size = 256 if not args.img_size else args.img_size
+    transform = transforms.Compose([transforms.Resize((img_size, img_size))] + final_transforms)
 elif args.dataset == 'tinyimagenet':
-    transform = transforms.Compose([transforms.Resize((64, 64))] + final_transforms)
+    # TODO: I have to use 288 to be able to run COUNTING with tinyimagenet but this is probably not OK
+    img_size = 64 if not args.img_size else args.img_size
+    # transform = transforms.Compose([transforms.Resize((img_size, img_size))] + final_transforms)
+    transform = transforms.Compose([*final_transforms])
+    if args.task == 'counting':
+        img_size = 288
+        transform = transforms.Compose([transforms.Resize((img_size, img_size)), transforms.RandomCrop((256, 256))] + final_transforms)
+        # NOTE: The above transform was specified in the paper so this is what we do here as well!
+
 elif args.dataset == 'cityscapes':
-    transform = transforms.Compose([transforms.RandomCrop((1024, 1024)), transforms.Resize((256, 256))] + final_transforms)
+    img_size = 256 if not args.img_size else args.img_size
+    transform = transforms.Compose([transforms.RandomCrop((1024, 1024)), transforms.Resize((img_size, img_size))] + final_transforms)
     # TODO: Is this too much downsampling?
 
 # Define collator for each self-supervised task
@@ -73,10 +86,9 @@ if args.model == 'alexnet':
 
 # TODO: Turns out there is no point in running this for AlexNet, as DataParallel
 #       overhead can dominate the runtime if your model is very small or has many small kernels.
-"""
+import torch.nn as nn
 if torch.cuda.device_count() > 1:
-    model = nn.DataParallel(model, device_ids=[4, 5, 6, 7])
-"""
+    model = nn.DataParallel(model, device_ids=[0, 1, 2, 3, 4, 5, 6, 7])
 model.to(DEVICE)
 
 # Load datasets
@@ -105,6 +117,8 @@ test_loader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=co
 
 # Setup optimizer and loss function
 optimizer = Adam(params=model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+# TODO: Add a scheduler
+
 if args.task == 'rotation':
     criterion = rotation_loss
 elif args.task == 'counting':
