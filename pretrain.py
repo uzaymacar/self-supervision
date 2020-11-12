@@ -38,6 +38,7 @@ parser.add_argument('--num_workers', default=0, type=int, help='Number of worker
 parser.add_argument('--gpu_id', default=7, type=int, help='This is the GPU to use in server [for UZAY]')
 parser.add_argument('--fraction_data', default=1.0, type=float, help='Fraction of the data sampled from the dataset. Lower for quicker experimentation')
 parser.add_argument('--learning_rate_decay', default=0.98, type=float, help='Gamma in exponential learning rate decay')
+parser.add_argument('--save', default='./saved_models', type=str, help='saved models directory')
 
 # Arguments for parallelization
 parser.add_argument('--local_rank', type=int, default=-1, help='Local rank for distributed training on GPUs')
@@ -48,6 +49,11 @@ args = parser.parse_args()
 
 
 def main_worker(rank, world_size):
+    # Configure saved models directory
+    if not os.path.isdir(args.save):
+        os.makedirs(args.save)
+    print(f'Your model will be save to {args.save}')
+
     print('RANK: ', rank)
     if args.local_rank == -1:
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -233,13 +239,13 @@ def main_worker(rank, world_size):
         if test_loss < best_test_loss:
             best_test_loss = test_loss
             model_id = '%s-%s-%s' % (args.model, args.dataset, args.task)
-            with open(os.path.join('saved_models', '%s.txt' % model_id), 'w') as f:
+            with open(os.path.join(args.save, '%s.txt' % model_id), 'w') as f:
                 f.write('Best Test Loss: %0.4f' % best_test_loss)
                 f.write('\n')
                 if args.task == 'rotation':
                     f.write('Best Accuracy: %0.4f' % test_acc)
                     f.write('\n')
-            torch.save(model.state_dict(), os.path.join('saved_models', '%s.pt' % model_id))
+            torch.save(model.state_dict(), os.path.join(args.save, '%s.pt' % model_id))
 
         print('\n')  # Do this in order to go below the second tqdm line
         if args.task == 'rotation':
