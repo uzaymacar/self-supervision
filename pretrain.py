@@ -73,8 +73,10 @@ def main_worker(rank, world_size):
         start_transforms = [transforms.Resize((img_size, img_size))]
 
     if args.task == 'counting':
-        crop_img_size = img_size
-        img_size = int(img_size * (4 / 3.5))
+        # NOTE: We are multiplying `img_size` by 2 because in `counting` we downsample by 2
+        #       If siamese network accepts (200,200) sized images, original size should be (400,400)
+        crop_img_size = img_size * 2
+        img_size = int(img_size * (4 / 3.5)) * 2
         start_transforms = [transforms.Resize((img_size, img_size)), transforms.RandomCrop((crop_img_size, crop_img_size))]
 
     # Combine all transformations into one
