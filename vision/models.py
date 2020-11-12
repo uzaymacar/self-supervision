@@ -11,30 +11,24 @@ MODEL_URLS = {
 }
 
 
-# TODO: Added BatchNorm Here FYI! Can we do transfer learning on these?
 class AlexNetBase(nn.Module):
     def __init__(self, batch_normalization=True):
         super(AlexNetBase, self).__init__()
         self.features = nn.Sequential(nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
-                                      # nn.BatchNorm2d(64),
                                       nn.ReLU(inplace=True),
                                       nn.MaxPool2d(kernel_size=3, stride=2),
                                       nn.Conv2d(64, 192, kernel_size=5, padding=2),
-                                      # nn.BatchNorm2d(192),
                                       nn.ReLU(inplace=True),
                                       nn.MaxPool2d(kernel_size=3, stride=2),
                                       nn.Conv2d(192, 384, kernel_size=3, padding=1),
-                                      # nn.BatchNorm2d(384),
                                       nn.ReLU(inplace=True),
                                       nn.Conv2d(384, 256, kernel_size=3, padding=1),
-                                      # nn.BatchNorm2d(256),
                                       nn.ReLU(inplace=True),
                                       nn.Conv2d(256, 256, kernel_size=3, padding=1),
-                                      # nn.BatchNorm2d(256),
                                       nn.ReLU(inplace=True),
                                       nn.MaxPool2d(kernel_size=3, stride=2))
         self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
-        self.initialize_weights()  # TODO: No need to initialize when using batch norm?
+        self.initialize_weights()
 
     def initialize_weights(self):
         for layer_no in range(len(self.features)):
@@ -53,14 +47,12 @@ class ClassificationHead(nn.Module):
         super(ClassificationHead, self).__init__()
         self.classifier = nn.Sequential(nn.Dropout(),
                                         nn.Linear(256 * 6 * 6, 4096),
-                                        # nn.BatchNorm1d(4096),
                                         nn.ReLU(inplace=True),
                                         nn.Dropout(),
                                         nn.Linear(4096, 4096),
-                                        # nn.BatchNorm1d(4096),
                                         nn.ReLU(inplace=True),
                                         nn.Linear(4096, num_classes))
-        self.initialize_weights()  # TODO: No need to initialize when using batch norm?
+        self.initialize_weights()
 
     def initialize_weights(self):
         for layer_no in range(len(self.classifier)):
@@ -84,7 +76,7 @@ class RegressionHead(nn.Module):
                                        # nn.BatchNorm1d(4096),
                                        nn.ReLU(inplace=True),
                                        nn.Linear(4096, output_size))
-        self.initialize_weights()  # TODO: No need to initialize when using batch norm?
+        self.initialize_weights()
 
     def initialize_weights(self):
         for layer_no in range(len(self.regressor)):

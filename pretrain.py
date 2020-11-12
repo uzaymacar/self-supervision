@@ -1,6 +1,7 @@
 # TODO: https://github.com/pytorch/examples/tree/master/imagenet -> Use this for best performance!
 import argparse
 import os
+from copy import deepcopy
 from tqdm import tqdm
 
 import torch
@@ -35,9 +36,9 @@ parser.add_argument('--task', default='rotation', choices=['rotation', 'counting
 parser.add_argument('--seed', default=42, type=int, help='Set seeds for reproducibility')
 parser.add_argument('--in_memory_dataset', default=False, action='store_true', help='Indicate to load dataset to memory (if applicable)')
 parser.add_argument('--num_workers', default=0, type=int, help='Number of workers for the data loaders')
-parser.add_argument('--gpu_id', default=7, type=int, help='This is the GPU to use in server [for UZAY]')
 parser.add_argument('--fraction_data', default=1.0, type=float, help='Fraction of the data sampled from the dataset. Lower for quicker experimentation')
 parser.add_argument('--learning_rate_decay', default=0.98, type=float, help='Gamma in exponential learning rate decay')
+parser.add_argument('--continue_from_checkpoint', default=False, action='store_true', help='Indicate the load model from checkpoint and continue training')
 
 # Arguments for parallelization
 parser.add_argument('--local_rank', type=int, default=-1, help='Local rank for distributed training on GPUs')
@@ -48,6 +49,10 @@ args = parser.parse_args()
 
 
 def main_worker(rank, world_size):
+    # Configure model ID
+    model_id = '%s-%s-%s' % (args.model, args.dataset, args.task)
+    print('MODEL_ID: %s' % model_id)
+
     print('RANK: ', rank)
     if args.local_rank == -1:
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -71,6 +76,8 @@ def main_worker(rank, world_size):
     elif args.dataset == 'cityscapes':
         img_size = 512 if not args.img_size else args.img_size
         start_transforms = [transforms.Resize((img_size, img_size))]
+    else:
+        raise ValueError('dataset=%s is not recognized!' % args.dataset)
 
     if args.task == 'counting':
         # NOTE: We are multiplying `img_size` by 2 because in `counting` we downsample by 2
@@ -93,11 +100,24 @@ def main_worker(rank, world_size):
         if args.task == 'rotation':
             model = AlexNetRotation(num_rotations=4)
         elif args.task == 'counting':
-            model = AlexNetCounting(num_elements=1000)  # TODO: Does 100 make sense here?
+            model = AlexNetCounting(num_elements=1000)
+        else:
+            raise ValueError('task=%s is not recognized!' % args.task)
+    else:
+        raise ValueError('model=%s is not recognized!' % args.model)
 
-    # TODO: Turns out there is no point in running this for AlexNet, as DataParallel
-    #       overhead can dominate the runtime if your model is very small or has many small kernels.
-        # Parallel
+    # Load saved model if applicable
+    if args.continue_from_checkpoint:
+        load_path = os.path.join('saved_models', '%s.pt' % model_id)
+        print('Loading learned weights from %s' % load_path)
+        state_dict = torch.load(load_path)
+        state_dict_ = deepcopy(state_dict)
+        # Rename parameters to exclude the starting 'module.' string so they match
+        # NOTE: We have to do this because of DataParallel saving parameters starting with 'module.'
+        for param in state_dict:
+            state_dict_[param.replace('module.', '')] = state_dict_.pop(param)
+        model.load_state_dict(state_dict_)
+
     if torch.cuda.device_count() > 1 and args.local_rank == -1:
         model = nn.DataParallel(model)
         model.to(device)
@@ -257,8 +277,11 @@ def main_worker(rank, world_size):
 
 
 def main():
+    # Configure number of GPUs to be used
     n_gpus = torch.cuda.device_count()
     print('We are using %d GPUs' % n_gpus)
+
+    # Spawn the training process
     if args.local_rank == -1:
         main_worker(rank=-1, world_size=1)
     else:
@@ -271,17 +294,10 @@ def main():
 
 if __name__ == '__main__':
     # Set random seed for reproducibility
-    # set_seed(seed=args.seed)  # TODO: Apparently this slows down training? -> mentioned https://github.com/pytorch/examples/blob/master/imagenet/main.py
+    # NOTE: Settings seeds requires cuda.deterministic = True, which slows things down considerably
+    # set_seed(seed=args.seed)
 
     # NOTE: Below line can be later commented out, for now we'll need it for debugging purposes
     # torch.autograd.set_detect_anomaly(True)
-
-    # Configure device to work on
-    # DEVICE = torch.device('cuda:%d' % args.gpu_id if torch.cuda.is_available() else 'cpu')
-    # print("DEVICE FOUND: %s" % DEVICE)
-
-    # Configure model id
-    MODEL_ID = '%s-%s-%s' % (args.model, args.dataset, args.task)
-    print('MODEL_ID: %s' % MODEL_ID)
 
     main()
