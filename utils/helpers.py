@@ -24,12 +24,10 @@ def classification_accuracy(y_pred, y_true):
     acc = correct_pred.sum() / len(correct_pred)
     return acc
 
-
+"""
 def freeze_weights(model, model_class='alexnet'):
-    """
-    Freezes all of the weights of the PyTorch model. You have change the last few layers
-    AFTER calling this function on your model, otherwise everything will be frozen.
-    """
+    # Freezes all of the weights of the PyTorch model. You have change the last few layers
+    # AFTER calling this function on your model, otherwise everything will be frozen.
     # TODO: Change this because now you have batch normalizations!
     if model_class == 'alexnet':
         # For AlexNet, below procedure freezes weights up to `conv3`
@@ -41,6 +39,46 @@ def freeze_weights(model, model_class='alexnet'):
                             param.requires_grad = False
                         if layer_no == 6:
                             return
+"""
+
+def freeze_weights(model, model_class='alexnet', freeze_layer=3):
+    """
+    Freezes all of the weights of the PyTorch model. You have change the last few layers
+    AFTER calling this function on your model, otherwise everything will be frozen.
+    Set conv_layer=3 to procedure freezes weights up to `conv3`.
+    """
+    # TODO: Change this because now you have batch normalizations!
+    if freeze_layer == 0:
+        return
+    conv_layer_no = (freeze_layer - 1) * 3
+    if model_class == 'alexnet':
+        for child in model.children():
+            for layer_no, layer in enumerate(child):
+                for param in layer.parameters():
+                    param.requires_grad = False
+                if layer_no == conv_layer_no:
+                    return
+    elif model_class == 'alexnet-rotation':
+        for child in model.children():
+            for component in child.children():
+                for subcomponent in component:
+                    for subsub in subcomponent.children():
+                        for layer_no, layer in enumerate(subsub):
+                            for param in layer.parameters():
+                                param.requires_grad = False
+                            if layer_no == conv_layer_no:
+                                return
+    elif model_class == 'alexnet-counting':
+        for child in model.children():
+            for component in child:
+                for subsub in component.children():
+                    for layer_no, layer in enumerate(subsub):
+                        for param in layer.parameters():
+                            param.requires_grad = False
+                        if layer_no == conv_layer_no:
+                            return
+
+
 
 
 def setup(rank, world_size):

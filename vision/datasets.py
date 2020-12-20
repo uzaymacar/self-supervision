@@ -12,6 +12,7 @@ import glob
 from torch.utils.data import Dataset
 from PIL import Image
 
+import random
 import json
 from collections import namedtuple
 import zipfile
@@ -353,7 +354,7 @@ class ImageNet(ImageFolder):
         targets (list): The class_index value for each image in the dataset
     """
 
-    def __init__(self, root, split='train', download=None, fraction_used=1.0, **kwargs):
+    def __init__(self, root, split='train', download=None, fraction_used=1.0, seed=42, **kwargs):
         if download is True:
             msg = ("The dataset is no longer publicly accessible. You need to "
                    "download the archives externally and place them in the root "
@@ -380,8 +381,10 @@ class ImageNet(ImageFolder):
                              for idx, clss in enumerate(self.classes)
                              for cls in clss}
 
-        # NOTE: We are adding this to limit the number of images
+        # NOTE: We are adding this to limit the number of images if necessary
         self.fraction_used = fraction_used
+        random.seed(seed)
+        random.shuffle(self.samples)
         self.samples = self.samples[:int(self.fraction_used * len(self.samples))]
 
     def parse_archives(self):
