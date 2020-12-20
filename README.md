@@ -1,5 +1,7 @@
 # Self-Supervised Learning for Computer Vision
 
+Our final project report can be found in `final_report.pdf`.
+
 We have developed a mini-framework that implements several self-supervised learning methods for 
 transfer learning on image classification, and an accompanying comparative performance analysis. 
 We have implemented the following self-supervised tasks: 
