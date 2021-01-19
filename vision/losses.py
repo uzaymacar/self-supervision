@@ -1,22 +1,48 @@
+"""Losses for self-supervised pretext tasks in vision."""
 import numpy as np
 import torch
 import torch.nn.functional as F
 
 
 def classification_loss(y_hat, y):
-    return F.cross_entropy(y_hat, y)
+    """
+    Implements standard classification loss with cross-entropy.
+
+    :param (torch.Tensor) y_hat:
+    :param (torch.Tensor) y: ground truth
+    :return: (torch.Tensor) loss
+    """
+    loss = F.cross_entropy(y_hat, y)
+    return loss
 
 
-def reconstruction_loss(y_hat, y, mask=None):
-    loss = F.mse_loss(y_hat, y, reduction='mean')
+def reconstruction_loss(y_hat, y, mask=None, reduction='mean'):
+    """
+    Implements standard pixel-wise regression loss with mean-squared error.
+
+    :param (torch.Tensor) y_hat: prediction
+    :param (torch.Tensor) y: ground truth
+    :param (torch.Tensor) mask: mask for weighing or removing loss components
+    :param (str) reduction: reduction strategy for computing the final loss term
+    :return: (torch.Tensor) loss
+    """
+    loss = F.mse_loss(y_hat, y, reduction=reduction)
     if mask is not None:
         loss *= mask
     return loss
 
 
-# TODO: Look at the reduction techniques in F.mse_loss()
 def counting_loss(originals_y_hat, tiles_y_hat, M=10, reduction='mean'):
-    """Contrastive loss limits the effects of the least effort bias"""
+    """
+    Implements the counting loss (reconstruction + contrastive) as shown in the paper.
+    The contrastive loss limits the effects of the least effort bias.
+
+    :param (torch.Tensor) originals_y_hat: prediction of AlexNetCounting on original images
+    :param (torch.Tensor) tiles_y_hat: prediction of AlexNetCounting on the tiles
+    :param (int) M: the constant used in the contrastive loss
+    :param (str) reduction: reduction strategy for computing the final loss term
+    :return: (torch.Tensor) loss
+    """
     # Create a shifted batch to compute the contrastive loss betweeen
     batch_size = originals_y_hat.shape[0]
     shift_index = np.random.randint(low=1, high=batch_size-2)

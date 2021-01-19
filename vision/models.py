@@ -1,4 +1,7 @@
+"""Vision models for self-supervised pretext tasks."""
 from copy import deepcopy
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -6,14 +9,14 @@ import torch.nn.functional as F
 from torchvision.models.utils import load_state_dict_from_url
 
 # Specify URLs to pretrained models here
-MODEL_URLS = {
-    'alexnet': 'https://download.pytorch.org/models/alexnet-owt-4df8aa71.pth',
-}
+MODEL_URLS = {'alexnet': 'https://download.pytorch.org/models/alexnet-owt-4df8aa71.pth'}
 
 
 class AlexNetBase(nn.Module):
     """
     Implements Base AlexNet with optional batch normalization and adaptive pooling.
+
+    :param (bool) batch_norm: set to True to apply batch normalization
     """
     def __init__(self, batch_norm=True):
         super(AlexNetBase, self).__init__()
@@ -52,6 +55,10 @@ class ClassificationHead(nn.Module):
     """
     Implements prediction head for classification tasks with optional batch normalization and
     optional dropout; adaptable with AlexNetBase.
+
+    :param (int) num_classes: number of classes in the classification task
+    :param (bool) batch_norm: set to True to apply batch normalization
+    :param (float) dropout_rate: dropout rate; set to 0. to disable dropout
     """
     def __init__(self, num_classes=1000, batch_norm=True, dropout_rate=0.5):
         super(ClassificationHead, self).__init__()
@@ -77,6 +84,10 @@ class RegressionHead(nn.Module):
     """
     Implements prediction head for regression tasks with optional batch normalization and
     optional dropout; adaptable with AlexNetBase.
+
+    :param (int) output_size: number of values or elements to predict
+    :param (bool) batch_norm: set to True to apply batch normalization
+    :param (float) dropout_rate: dropout rate; set to 0. to disable dropout
     """
     def __init__(self, output_size=1000, batch_norm=True, dropout_rate=0.5):
         super(RegressionHead, self).__init__()
@@ -101,7 +112,11 @@ class RegressionHead(nn.Module):
 class DecoderHead(nn.Module):
     """
     Implements a convolutional prediction head for decoding and generation tasks with optional
-    batch normalization and optional dropout; adaptable with AlexNetBase.
+    batch normalization; adaptable with AlexNetBase.
+    NOTE: We are not applying optional dropout as it is typically not used in decoders.
+
+    :param (int) target_size: the target size to resize the output to
+    :param (bool) batch_norm: set to True to apply batch normalization
     """
     def __init__(self, target_size, batch_norm=True):
         super(DecoderHead, self).__init__()
@@ -150,6 +165,8 @@ class AlexNetClassic(nn.Module):
 class AlexNetRotation(nn.Module):
     """
     Implements AlexNet model for self-supervised rotation classification task.
+
+    :param (int) num_rotations: number of classes of rotations to use
     """
     def __init__(self, num_rotations=4):
         super(AlexNetRotation, self).__init__()
@@ -167,6 +184,8 @@ class AlexNetRotation(nn.Module):
 class AlexNetCounting(nn.Module):
     """
     Implements AlexNet model for self-supervised visual counting task.
+
+    :param (int) num_elements: number of individual elements to count for in each image
     """
     def __init__(self, num_elements=1000):
         super(AlexNetCounting, self).__init__()
@@ -186,41 +205,50 @@ class AlexNetCounting(nn.Module):
 class AlexNetContext(nn.Module):
     """
     Implements AlexNet model for self-supervised context encoder task.
-    NOTE: We are using a 1D convolutional layer as the channel-wise fully connected layer.
+
+    :param (int) target_size: the target size to resize the output to
+    :param (float) dropout_rate: dropout rate; set to 0. to disable dropout
     """
     def __init__(self, target_size, dropout_rate=0.5):
         super(AlexNetContext, self).__init__()
-        num_channels = 256 * 6 * 6
-        self.model = nn.ModuleList([AlexNetBase(batch_norm=True),
-                                    nn.Conv1d(in_channels=num_channels,
-                                              out_channels=num_channels,
-                                              kernel_size=2,
-                                              groups=num_channels),
-                                    nn.Dropout() if dropout_rate > 0. else nn.Identity(),
-                                    DecoderHead(target_size=target_size, batch_norm=True)])
+        self.latent_dim = 256 * 6 * 6
+
+        self.encoder = AlexNetBase(batch_norm=True)
+
+        # NOTE: We are using a 1D convolutional layer as the channel-wise fully connected layer.
+        self.bottleneck = nn.ModuleList([nn.Conv1d(in_channels=self.latent_dim,
+                                                   out_channels=self.latent_dim,
+                                                   kernel_size=2,
+                                                   groups=self.latent_dim),
+                                         nn.Dropout() if dropout_rate > 0. else nn.Identity()])
+
+        self.decoder = DecoderHead(target_size=target_size, batch_norm=True)
 
     def forward(self, x):
-        x = self.model[0](x)  # base
-        x = self.model[1](x)  # channel-wise fully connected layer
-        x = self.model[2](x)  # optional dropout layer
-        x = self.model[3](x)  # head
+        x = self.encoder(x)
+        x = self.bottleneck(x)
+        x = x.view(-1, 256, 6, 6)
+        x = self.decoder(x)
         return x
 
 
 class AlexNetJigsaw(nn.Module):
     """
     Implements AlexNet model for self-supervised jigsaw puzzle task.
+
+    :param (int) num_tiles: number of tiles to divide each image to for the puzzle
+    :param (int) num_permutations: number of permutations to arrange the tiles
     """
     def __init__(self, num_tiles=9, num_permutations=1000):
         super(AlexNetJigsaw, self).__init__()
 
+        # Make sure num. tiles is a number whose square root is an integer (i.e. perfect square)
+        assert num_tiles % np.sqrt(num_tiles) == 0
         self.num_tiles = num_tiles
 
+        # TODO: During self-supervised pretraining authors use stride 2 for the first CONV layer
         self.siamese_network = nn.ModuleList([AlexNetBase(batch_norm=True),
-                                              nn.Linear(256 * 6 * 6, 2048, bias=False),
-                                              nn.BatchNorm1d(2048),
-                                              nn.ReLU(inplace=True),
-                                              nn.Linear(2048, 512, bias=False),
+                                              nn.Linear(256 * 6 * 6, 512, bias=False),
                                               nn.BatchNorm1d(512),
                                               nn.ReLU(inplace=True)])
 
@@ -239,31 +267,12 @@ class AlexNetJigsaw(nn.Module):
         return x
 
 
-class AlexNetColorization(nn.Module):
-    """
-    Implements AlexNet model for self-supervised colorization task.
-    NOTE: We are using a 1D convolutional layer as the channel-wise fully connected layer.
-    """
-    def __init__(self, target_size, dropout_rate=0.5):
-        super(AlexNetColorization, self).__init__()
-        num_channels = 256 * 6 * 6
-        self.model = nn.ModuleList([AlexNetBase(batch_norm=True),
-                                    nn.Conv1d(in_channels=num_channels,
-                                              out_channels=num_channels,
-                                              kernel_size=2,
-                                              groups=num_channels),
-                                    nn.Dropout() if dropout_rate > 0. else nn.Identity(),
-                                    DecoderHead(target_size=target_size, batch_norm=True)])
-
-    def forward(self, x):
-        x = self.model[0](x)  # base
-        x = self.model[1](x)  # channel-wise fully connected layer
-        x = self.model[2](x)  # optional dropout layer
-        x = self.model[3](x)  # head
-        return x
-
-
 def alexnet_pretrained(progress=True):
+    """
+    Function for loading pretrained AlexNet model.
+
+    :param (bool) progress: set to True to show the progress bar when downloading the model
+    """
     model = AlexNetClassic()
     state_dict = load_state_dict_from_url(MODEL_URLS['alexnet'], progress=progress)
     state_dict_ = deepcopy(state_dict)
